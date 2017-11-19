@@ -1,8 +1,9 @@
 #include "ix.h"
-//ian start to play this game :)
+#include "../rbf/rbfm.h"
+
 IndexManager* IndexManager::_index_manager = 0;
-IndexManager* IndexManager::instance()
-{
+
+IndexManager* IndexManager::instance() {
     if(!_index_manager)
         _index_manager = new IndexManager();
 
@@ -78,14 +79,14 @@ RC IndexManager::insertEntry(IXFileHandle &ixfileHandle, const Attribute &attrib
         ++ixfileHandle.ixAppendPageCounter;
     }
     int intKey = 0;
-    float floatKey = 0.0;
+    float realKey = 0.0;
     int varLen = 0;
     string varKey = "";
     if (type == TypeInt)    intKey = *(int*)key;
-    else if (type == TypeReal)  floatKey = *(char*)key;
+    else if (type == TypeReal)  realKey = *(float*)key;
     else {
         varLen = *(int*)key;
-        for (int i = 0; i < varLen; ++i) varKey += *(char*)(key + 4 + i);
+        for (int i = 0; i < varLen; ++i) varKey += *((char*)key + 4 + i);
     }
     ixfileHandle.fileHandle.readPage(now, tmp);
     ++ixfileHandle.ixReadPageCounter;
@@ -93,9 +94,55 @@ RC IndexManager::insertEntry(IXFileHandle &ixfileHandle, const Attribute &attrib
     IndexPage indexPage;
     LeafPage leafPage;
     bool isLeaf = ((*(int*)tmp) == 0);
+    //TODO binary search
     while (!isLeaf) {
         indexPage.encode(tmp, type);
+        int p = 0;
+        while (p + 1 < indexPage.n) {
+            if (type == TypeInt) {
+                if (intKey >= indexPage.Int[p + 1]) ++p;
+                else break;
+            }
+            else if (type == TypeReal) {
+                if (realKey >= indexPage.Real[p + 1])   ++p;
+                else break;
+            }
+            else {
+                if (varKey >= indexPage.Varchar[p + 1]) ++p;
+                else break;
+            }
+        }
+        rootIndexPage.pb(now);
+        rootPos.pb(p);
+        if(p == -1) now = indexPage.Left;
+        else now = indexPage.Right[p];
+        ixfileHandle.fileHandle.readPage(now, tmp);
+        ++ixfileHandle.ixReadPageCounter;
+        isLeaf = (*(int*)tmp == 0);
     }
+    leafPage.encode(tmp, type);
+    int p = -1;
+    //TODO binary search
+    while (p + 1 < leafPage.n) {
+        if (type == TypeInt) {
+            if (intKey >= leafPage.Int[p + 1])  ++p;
+            else break;
+        }
+        else if (type == TypeReal) {
+            if (realKey >= leafPage.Real[p + 1])   ++p;
+            else break;
+        }
+        else {
+            if (varKey >= leafPage.Varchar[p + 1])  ++p;
+            else break;
+        }
+    }
+    if (type == TypeInt)    leafPage.Int.insert(leafPage.Int.begin() + p + 1, intKey);
+    else if (type == TypeReal)  leafPage.Real.insert(leafPage.Real.begin() + p + 1, realKey);
+    else leafPage.Varchar.insert(leafPage.Varchar.begin() + p + 1, varKey);
+    leafPage.Rid.insert(leafPage.Rid.begin() + p + 1, rid);
+    ++leafPage.n;
+    leafPage.update();
     return 0;
 }
 
@@ -171,7 +218,7 @@ void IndexPage::encode(void* data, int type) {
             offset += 4;
         }
         else if (type == TypeReal) {
-            Real.pb(*(int*)((char*)data + offset));
+            Real.pb(*(float*)((char*)data + offset));
             offset += 4;
             Right.pb(*(int*)((char*)data + offset));
             offset += 4;
@@ -190,8 +237,121 @@ void IndexPage::encode(void* data, int type) {
     len = offset;
 }
 
-void IndexPage::encode(void *data, int type) {
+void IndexPage::decode(void *data) {
+    *(char*)data = 1;//index
+    int offset = 4;
+    *(int*)((char*)data + offset) = n;
+    offset += 4;
+    *(int*)((char*)data + offset) = Left;
+    offset += 4;
+    for (int i = 0; i < n; ++i) {
+        if (keyType == TypeInt) {
+            *(int*)((char*)data + offset) = Int[i];
+            offset += 4;
+            *(int*)((char*)data + offset) = Right[i];
+            offset += 4;
+        }
+        else if (keyType == TypeReal) {
+            *(int*)((char*)data + offset) = Real[i];
+            offset += 4;
+            *(int*)((char*)data + offset) = Right[i];
+            offset += 4;
+        }
+        else {
+            int l = Varchar.size();
+            *(int*)((char*)data + offset) = l;
+            offset += 4;
+            for (int j = 0; j < l; ++j) *((char*)data + offset + j) = Varchar[i][j];
+            offset += l;
+            *(int*)((char*)data + offset) = Right[i];
+            offset += 4;
+        }
+    }
+}
 
+void LeafPage::encode(void *data, int type) {
+    keyType = type;
+    int offset = 4;
+    n = *(int*)((char*)data + offset);
+    offset += 4;
+    nxt = *(int*)((char*)data + offset);
+    offset += 4;
+    RID now;
+    for (int i = 0; i < n; ++i) {
+        if (type == TypeInt) {
+            Int.pb(*(int*)((char*)data + offset));
+            offset += 4;
+            now.pageNum = (*(int*)((char*)data + offset));
+            offset += 4;
+            now.slotNum = (*(int*)((char*)data + offset));
+            offset += 4;
+        }
+        else if (type == TypeReal) {
+            Real.pb(*(float*)((char*)data + offset));
+            offset += 4;
+            now.pageNum = (*(int*)((char*)data + offset));
+            offset += 4;
+            now.slotNum = (*(int*)((char*)data + offset));
+            offset += 4;
+        }
+        else {
+            int l = *(int*)((char*)data + offset);
+            offset += 4;
+            string t = "";
+            for (int j = 0; j < l; ++j) t += *((char*)data + offset + j);
+            offset += l;
+            now.pageNum = *(int*)((char*)data + offset);
+            offset += 4;
+            now.slotNum = *(int*)((char*)data + offset);
+            offset += 4;
+        }
+        Rid.pb(now);
+    }
+    len = offset;
+}
+
+void LeafPage ::decode(void *data) {
+    *(char*)data = 1;//leaf
+    int offset = 4;
+    *(int*)((char*)data + offset) = n;
+    offset += 4;
+    *(int*)((char*)data + offset) = nxt;
+    offset += 4;
+    for (int i = 0; i < n; ++i) {
+        if (keyType == TypeInt) {
+            *(int*)((char*)data + offset) = Int[i];
+            offset += 4;
+            *(int*)((char*)data + offset) = Rid[i].pageNum;
+            offset += 4;
+            *(int*)((char*)data + offset) = Rid[i].slotNum;
+            offset += 4;
+        }
+        else if (keyType == TypeReal) {
+            *(float*)((char*)data + offset) = Real[i];
+            offset += 4;
+            *(int*)((char*)data + offset) = Rid[i].pageNum;
+            offset += 4;
+            *(int*)((char*)data + offset) = Rid[i].slotNum;
+            offset += 4;
+        }
+        else {
+            *(int*)((char*)data + offset) = Varchar.size();
+            offset += 4;
+            for (int j = 0; j < Varchar.size(); ++j)    *((char*)data + offset + j) = Varchar[i][j];
+            offset += Varchar.size();
+            *(int*)((char*)data + offset) = Rid[i].pageNum;
+            offset += 4;
+            *(int*)((char*)data + offset) = Rid[i].slotNum;
+        }
+    }
+}
+
+void LeafPage::update() {
+    len = 12;
+    for (int i = 0; i < n; ++i) {
+        len += 12;//key pageNum slotNum
+        if (keyType == TypeVarChar) len += Varchar[i].size();
+    }
 }
 
 LeafPage ::LeafPage() {
@@ -200,9 +360,9 @@ LeafPage ::LeafPage() {
     Int.clear(), Real.clear(), Varchar.clear();
 }
 RC IXFileHandle::collectCounterValues(unsigned &readPageCount, unsigned &writePageCount, unsigned &appendPageCount) {
-    ixReadPageCounter = readPageCount;
-    ixWritePageCounter = writePageCount;
-    ixAppendPageCounter = appendPageCount;
+    readPageCount = ixReadPageCounter;
+    writePageCount = ixWritePageCounter;
+    appendPageCount = ixAppendPageCounter;
     return 0;
 }
 
