@@ -47,6 +47,8 @@ class IndexManager {
         RC changeHiddenPage(char *s, int val, int type);
         // Delete an index file.
         RC destroyFile(const string &fileName);
+        RC getKeyType(IXFileHandle &ixFileHandle);
+        RC getRootPage(IXFileHandle &ixFileHandle);
 
         // Open an index and return an ixfileHandle.
         RC openFile(const string &fileName, IXFileHandle &ixfileHandle);
@@ -83,6 +85,25 @@ class IndexManager {
 
 class IX_ScanIterator {
     public:
+        IXFileHandle ixFileHandle;
+
+        char* tmp;
+        bool lowKeyNull;
+        bool highKellNull;
+        bool lowKeyInclu;
+        bool highKeyInclu;
+
+        int currentPage;
+        int position;
+        int type;
+        RID Rid;
+
+        int lowKeyInt;
+        int highKeyInt;
+        float lowKeyReal;
+        float highKeyReal;
+        string lowKeyVar;
+        string highKeyVar;
 
 		// Constructor
         IX_ScanIterator();
@@ -92,6 +113,8 @@ class IX_ScanIterator {
 
         // Get next matching entry
         RC getNextEntry(RID &rid, void *key);
+
+
 
         // Terminate index scan
         RC close();
