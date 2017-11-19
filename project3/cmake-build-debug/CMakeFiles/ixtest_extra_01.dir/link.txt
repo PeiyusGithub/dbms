@@ -1,0 +1,1 @@
+/usr/bin/c++  -g   CMakeFiles/ixtest_extra_01.dir/src/ix/ixtest_extra_01.cc.o  -o ixtest_extra_01 libLIBRBF.a 

@@ -1,0 +1,1 @@
+/usr/bin/c++  -g   CMakeFiles/rbftest5.dir/src/rbf/rbftest5.cc.o  -o rbftest5 libLIBRBF.a 

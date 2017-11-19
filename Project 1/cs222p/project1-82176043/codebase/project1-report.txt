@@ -1,0 +1,33 @@
+Project 1 - Lingzhe Meng(82176043)
+
+1. Development Environmen
+- Operating System : Windows 8.1
+- gcc version : 6.3.0
+
+2. PagedFileManager Class
+
+I used the first page as a hidden page to save counter and page number. And I used some simple I/O function to solve PFM.
+
+3. RecordBasedFileManager  
+
+This part is much harder than previous one. I used a class called "Record" and a class called "Page" to save information of record and page. 
+
+An each end of the page, I used 8 bytes to save "N" and "F". And I used "vector<int> slotLength, slotOffset" to save information of slot. "vector" can easily describe growing. I also saved "slotNum" and the size of freeSpace.
+
+In each record, I used first (fieldcount + 1) * 4 bytes to save the number of fieldcount and the offset of each fieldcount. And I seleted "actual data" from the "data" by nullIndicator.
+
+I used function to implement transformation from "data" and "actual data". 
+
+I used a vector called pageFreeeSpace to know each page's free space. When inserting a new record, I can use this vector to know which page I can put the record in quickly. I used this vector because at the beginning I used for loop to read a page and got its free space, but too many reading pages waste too much time and cause bad_alloc error(I dont' know why).
+
+4. Some Problems
+
+I have encounterd some problems during this project.
+
+(1) In some places, malloc will cause some problems, but if I used "new", it will be okay.
+
+(2) Reading pages too many times will cause bad_alloc problem.
+
+(3) In some places, when I use "cout" with out "endl", it will print nothing and cause some errors.
+
+And I have used some ways to solve or avoid these problems.

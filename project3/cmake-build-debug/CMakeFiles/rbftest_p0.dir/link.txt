@@ -1,0 +1,1 @@
+/usr/bin/c++  -g     -o rbftest_p0 libLIBRBF.a 
