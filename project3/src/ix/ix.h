@@ -22,6 +22,7 @@ public:
     vector<string> Varchar;
     IndexPage();
     void encode(void* data, int type);
+    void decode(void* data);
 };
 
 class LeafPage {
@@ -33,6 +34,8 @@ public:
     vector<RID> Rid;
     LeafPage();
     void encode(void* data, int type);
+    void decode(void* data);
+    void update();
 };
 
 class IndexManager {

@@ -9,6 +9,8 @@
 /home/mlz000/mlz000/DataBase-Management-System/project3/src/ix/ix.cc
 ix.h
 /home/mlz000/mlz000/DataBase-Management-System/project3/src/ix/ix.h
+../rbf/rbfm.h
+/home/mlz000/mlz000/DataBase-Management-System/project3/src/rbf/rbfm.h
 
 /home/mlz000/mlz000/DataBase-Management-System/project3/src/ix/ix.h
 vector
