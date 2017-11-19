@@ -356,7 +356,7 @@ void LeafPage::encode(void *data, int type) {
             string t = "";
             for (int j = 0; j < l; ++j) t += *((char*)data + offset + j);
             offset += l;
-            now.pageNum = *(int*)((char*)datnia + offset);
+            now.pageNum = *(int*)((char*)data + offset);
             offset += 4;
             now.slotNum = *(int*)((char*)data + offset);
             offset += 4;
