@@ -160,7 +160,55 @@ RC IndexManager::scan(IXFileHandle &ixfileHandle,
         bool        	highKeyInclusive,
         IX_ScanIterator &ix_ScanIterator)
 {
+    //file should be opened
+    if (!ixfileHandle.fileHandle.open) return -1;
+
+
+    int keyType = IndexManager :: getKeyType(ixfileHandle);
+    int rootPage = IndexManager :: getRootPage(ixfileHandle);
+    //initialize iterator
+    ix_ScanIterator.ixFileHandle = ixfileHandle;
+    ix_ScanIterator.highKeyInclu = highKeyInclusive;
+    ix_ScanIterator.lowKeyInclu = lowKeyInclusive;
+
+    if (type == TypeInt) {
+        ix_ScanIterator.lowKeyInt = (lowKey) ? *(int*)lowKey : INT_MIN;
+        ix_ScanIterator.highKeyInt = (highKey) ? *(int*)highKey : INT_MAX;
+    } else if (attribute.type == TypeReal) {
+        ix_ScanIterator.lowKeyReal = (lowKey) ? *(float*)lowKey : (float)INT_MIN;
+        ix_ScanIterator.highKeyReal = (highKey) ? *(float*)highKey : (float)INT_MAX;
+    } else{
+        if(lowKey) {
+            int len = *(int*)lowKey;
+            for (int i = 0; i < len; ++i)
+                ix_ScanIterator.lowKeyVar += (char*)(lowKey + 4 + i);
+        }
+        if (highKey) {
+            int len = *(int*)highKey;
+            for (int i = 0; i < len; ++i) {
+                ix_ScanIterator.highKeyVar += (char*)(highKey + 4 + i);
+            }
+        }
+    }
+    //store the current root page into tmp
+    ixfileHandle.fileHandle.readPage(rootPage,ix_ScanIterator.tmp);
+    ixfileHandle.ixReadPageCounter++;
+
+
+
     return -1;
+}
+
+RC IndexManager::getKeyType(IXFileHandle &ixFileHandle) {
+    ixFileHandle.fileHandle.readPage(0,tmp);
+    ixFileHandle.ixReadPageCounter++;
+    return *(int*)(tmp+4);
+}
+
+RC IndexManager::getRootPage(IXFileHandle &ixFileHandle) {
+    ixFileHandle.fileHandle.readPage(0,tmp);
+    ixFileHandle.ixReadPageCounter++;
+    return *(int*)tmp;
 }
 
 void IndexManager::printBtree(IXFileHandle &ixfileHandle, const Attribute &attribute) const {
@@ -168,10 +216,18 @@ void IndexManager::printBtree(IXFileHandle &ixfileHandle, const Attribute &attri
 
 IX_ScanIterator::IX_ScanIterator()
 {
+    tmp = new char[PAGE_SIZE];
+    highKellNull = true;
+    lowKeyNull = true;
+    highKeyInclu = true;
+    lowKeyInclu = true;
+    lowKeyVar = "";
+    highKeyVar = "";
 }
 
 IX_ScanIterator::~IX_ScanIterator()
 {
+    delete [] tmp;
 }
 
 RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
@@ -300,7 +356,7 @@ void LeafPage::encode(void *data, int type) {
             string t = "";
             for (int j = 0; j < l; ++j) t += *((char*)data + offset + j);
             offset += l;
-            now.pageNum = *(int*)((char*)data + offset);
+            now.pageNum = *(int*)((char*)datnia + offset);
             offset += 4;
             now.slotNum = *(int*)((char*)data + offset);
             offset += 4;
