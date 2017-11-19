@@ -164,8 +164,9 @@ RC IndexManager::scan(IXFileHandle &ixfileHandle,
     if (!ixfileHandle.fileHandle.open) return -1;
 
 
-    int keyType = IndexManager :: getKeyType(ixfileHandle);
-    int rootPage = IndexManager :: getRootPage(ixfileHandle);
+    int type = IndexManager :: getKeyType(ixfileHandle);
+    int pageNum = IndexManager :: getRootPage(ixfileHandle);
+    ix_ScanIterator.type = type;
     //initialize iterator
     ix_ScanIterator.ixFileHandle = ixfileHandle;
     ix_ScanIterator.highKeyInclu = highKeyInclusive;
@@ -191,12 +192,86 @@ RC IndexManager::scan(IXFileHandle &ixfileHandle,
         }
     }
     //store the current root page into tmp
-    ixfileHandle.fileHandle.readPage(rootPage,ix_ScanIterator.tmp);
+    ixfileHandle.fileHandle.readPage(pageNum,ix_ScanIterator.tmp);
     ixfileHandle.ixReadPageCounter++;
 
+    bool isLeaf = (*(int*)ix_ScanIterator.tmp == 0);
+    // when it is index page
+    while(!isLeaf) {
+        //searching leaf node
+        IndexPage indexPage;
+        indexPage.encode(ix_ScanIterator.tmp,type);
+        int pos = -1;
+        //locate the interval
+        while (pos+1 < indexPage.n) {
+            if (type == TypeInt) {
+                if (ix_ScanIterator.lowKeyInt >= indexPage.Int[pos+1])
+                    pos++;
+                else
+                    break;
+            } else if (type == TypeReal) {
+                if (ix_ScanIterator.lowKeyReal >= indexPage.Real[pos+1])
+                    pos++;
+                else
+                    break;
+            } else {
+                if (ix_ScanIterator.lowKeyVar >= indexPage.Varchar[pos+1])
+                    pos++;
+                else
+                    break;
+            }
+        }
+        //update page number
+        if (pos == -1) pageNum = indexPage.Left;
+        else pageNum = indexPage.Right[pos];
 
+        ixfileHandle.fileHandle.readPage(pageNum,ix_ScanIterator.tmp);
+        ixfileHandle.ixReadPageCounter++;
+        isLeaf = (*(int*)ix_ScanIterator.tmp == 0);
+    }
 
-    return -1;
+    if (pageNum < 1 ) return -1;
+
+    ix_ScanIterator.currentPage = pageNum;
+    ix_ScanIterator.position = 0;
+
+    LeafPage leafPage;
+    leafPage.encode(ix_ScanIterator.tmp,type);
+
+    for (int i = 0; i < leafPage.n; ++i) {
+        if (type == TypeInt) {
+            if (lowKeyInclusive && leafPage.Int[i] >= ix_ScanIterator.lowKeyInt) {
+                ix_ScanIterator.position = i;
+                return 0;
+            }
+
+            if (!lowKeyInclusive && leafPage.Int[i] > ix_ScanIterator.lowKeyInt) {
+                ix_ScanIterator.position = i;
+                return 0;
+            }
+        } else if (type = TypeReal) {
+            if (lowKeyInclusive && leafPage.Real[i] >= ix_ScanIterator.lowKeyReal) {
+                ix_ScanIterator.position = i;
+                return 0;
+            }
+
+            if (!lowKeyInclusive & leafPage.Real[i] >= ix_ScanIterator.lowKeyReal) {
+                ix_ScanIterator.position = i;
+                return 0;
+            }
+        } else {
+            if (lowKeyInclusive && leafPage.Varchar[i] >= ix_ScanIterator.lowKeyVar) {
+                ix_ScanIterator.position = i;
+                return 0;
+            }
+
+            if (lowKeyInclusive && leafPage.Varchar[i] >= ix_ScanIterator.lowKeyVar) {
+                ix_ScanIterator.position = i;
+                return 0;
+            }
+        }
+    }
+    return 0;
 }
 
 RC IndexManager::getKeyType(IXFileHandle &ixFileHandle) {
@@ -232,7 +307,88 @@ IX_ScanIterator::~IX_ScanIterator()
 
 RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
 {
-    return -1;
+    LeafPage leafPage;
+    leafPage.encode(tmp,type);
+
+    while(1){
+
+        if (position < leafPage.n && leafPage.Rid[position].pageNum == Rid.pageNum && leafPage.Rid[position].slotNum == Rid.slotNum)
+            position++;
+
+        //once the page is scaned , go to next page
+        while (position >= leafPage.n) {
+            if (leafPage.nxt != -1) {
+                currentPage = leafPage.nxt;
+                position = 0;
+                ixFileHandle.fileHandle.readPage(currentPage,tmp);
+                ixFileHandle.ixReadPageCounter++;
+                leafPage.encode(tmp,type);
+            } else {
+                return IX_EOF;
+            }
+        }
+
+
+        if (type == TypeInt) {
+            if (highKeyInclu) {
+                if(leafPage.Int[position] <=  highKeyInt) {
+                    *(int*) key = leafPage.Int[position];
+                    rid = leafPage.Rid[position];
+                    Rid = rid;
+                    return 0;
+                } else
+                    return IX_EOF;
+            } else {
+                if(leafPage.Int[position] < highKeyInt) {
+                    *(int*) key = leafPage.Int[position];
+                    rid = leafPage.Rid[position];
+                    Rid = rid;
+                    return 0;
+                } else
+                    return IX_EOF;
+            }
+        } else if (type == TypeReal) {
+            if (highKeyInclu) {
+                if (leafPage.Real[position] <= highKeyReal) {
+                    *(float*) key = leafPage.Real[position];
+                    rid = leafPage.Rid[position];
+                    Rid = rid;
+                    return 0;
+                } else
+                    return IX_EOF;
+            } else {
+                if (leafPage.Real[position] < highKeyReal) {
+                    *(float*) key = leafPage.Real[position];
+                    rid = leafPage.Rid[position];
+                    Rid = rid;
+                    return 0;
+                } else
+                    return IX_EOF;
+            }
+        } else {
+            if (highKeyInclu) {
+                if (highKellNull || leafPage.Varchar[position] <= highKeyVar) {
+                    *(int*)key = leafPage.Varchar[position].length();
+                    memcpy((char*)key+4,leafPage.Varchar[position].c_str(),*(int*)key);
+                    rid = leafPage.Rid[position];
+                    Rid = rid;
+                    return 0;
+                } else
+                    return IX_EOF;
+
+            } else {
+                if(highKellNull || leafPage.Varchar[position] < highKeyVar) {
+                    *(int*)key = leafPage.Varchar[position].length();
+                    memcpy((char*)key+4,leafPage.Varchar[position].c_str(),*(int*)key);
+                    rid = leafPage.Rid[position];
+                    Rid = rid;
+                    return 0;
+                } else
+                    return IX_EOF;
+            }
+        }
+
+    }
 }
 
 RC IX_ScanIterator::close()
@@ -415,6 +571,7 @@ LeafPage ::LeafPage() {
     len = 12;
     Int.clear(), Real.clear(), Varchar.clear();
 }
+
 RC IXFileHandle::collectCounterValues(unsigned &readPageCount, unsigned &writePageCount, unsigned &appendPageCount) {
     readPageCount = ixReadPageCounter;
     writePageCount = ixWritePageCounter;
