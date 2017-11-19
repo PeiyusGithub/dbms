@@ -1,5 +1,5 @@
 #include "ix.h"
-#ian start to play this game :)
+//ian start to play this game :)
 IndexManager* IndexManager::_index_manager = 0;
 IndexManager* IndexManager::instance()
 {
