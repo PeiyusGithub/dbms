@@ -153,12 +153,12 @@ RC IndexManager::deleteEntry(IXFileHandle &ixfileHandle, const Attribute &attrib
 
 
 RC IndexManager::scan(IXFileHandle &ixfileHandle,
-        const Attribute &attribute,
-        const void      *lowKey,
-        const void      *highKey,
-        bool			lowKeyInclusive,
-        bool        	highKeyInclusive,
-        IX_ScanIterator &ix_ScanIterator)
+                      const Attribute &attribute,
+                      const void      *lowKey,
+                      const void      *highKey,
+                      bool			lowKeyInclusive,
+                      bool        	highKeyInclusive,
+                      IX_ScanIterator &ix_ScanIterator)
 {
     //file should be opened
     if (!ixfileHandle.fileHandle.open) return -1;
@@ -182,12 +182,12 @@ RC IndexManager::scan(IXFileHandle &ixfileHandle,
         if(lowKey) {
             int len = *(int*)lowKey;
             for (int i = 0; i < len; ++i)
-                ix_ScanIterator.lowKeyVar += (char*)(lowKey + 4 + i);
+                ix_ScanIterator.lowKeyVar += *((char*)lowKey + 4 + i);
         }
         if (highKey) {
             int len = *(int*)highKey;
             for (int i = 0; i < len; ++i) {
-                ix_ScanIterator.highKeyVar += (char*)(highKey + 4 + i);
+                ix_ScanIterator.highKeyVar += *((char*)highKey + 4 + i);
             }
         }
     }
@@ -249,24 +249,23 @@ RC IndexManager::scan(IXFileHandle &ixfileHandle,
                 ix_ScanIterator.position = i;
                 return 0;
             }
-        } else if (type == TypeReal) {
+        } else if (type = TypeReal) {
             if (lowKeyInclusive && leafPage.Real[i] >= ix_ScanIterator.lowKeyReal) {
                 ix_ScanIterator.position = i;
                 return 0;
             }
 
-            if (!lowKeyInclusive & leafPage.Real[i] > ix_ScanIterator.lowKeyReal) {
+            if (!lowKeyInclusive & leafPage.Real[i] >= ix_ScanIterator.lowKeyReal) {
                 ix_ScanIterator.position = i;
                 return 0;
             }
         } else {
-
             if (lowKeyInclusive && leafPage.Varchar[i] >= ix_ScanIterator.lowKeyVar) {
                 ix_ScanIterator.position = i;
                 return 0;
             }
 
-            if (!lowKeyInclusive && leafPage.Varchar[i] > ix_ScanIterator.lowKeyVar) {
+            if (lowKeyInclusive && leafPage.Varchar[i] >= ix_ScanIterator.lowKeyVar) {
                 ix_ScanIterator.position = i;
                 return 0;
             }
@@ -287,7 +286,7 @@ RC IndexManager::getRootPage(IXFileHandle &ixFileHandle) {
     return *(int*)tmp;
 }
 
-void IndexManager::printBtree(IXFileHandle &ixfileHandle, const Attribute &attribute) const {
+void IndexManager::printBtree(IXFileHandle &ixfileHandle, const Attribute &attribute){
     int rootPage = getRootPage(ixfileHandle);
     ixfileHandle.fileHandle.readPage(rootPage,tmp);
     bool isLeaf = *(int*)tmp == 0;
@@ -296,8 +295,17 @@ void IndexManager::printBtree(IXFileHandle &ixfileHandle, const Attribute &attri
 
 }
 
-IX_ScanIterator::IX_ScanIterator()
-{
+IX_ScanIterator::IX_ScanIterator(IXFileHandle ixFileHandle) : ixFileHandle(ixFileHandle) {
+    tmp = new char[PAGE_SIZE];
+    highKellNull = true;
+    lowKeyNull = true;
+    highKeyInclu = true;
+    lowKeyInclu = true;
+    lowKeyVar = "";
+    highKeyVar = "";
+}
+
+IX_ScanIterator::IX_ScanIterator() {
     tmp = new char[PAGE_SIZE];
     highKellNull = true;
     lowKeyNull = true;
