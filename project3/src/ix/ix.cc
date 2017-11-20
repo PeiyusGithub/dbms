@@ -443,17 +443,13 @@ RC IndexManager::scan(IXFileHandle &ixfileHandle,
                 ix_ScanIterator.position = i;
                 return 0;
             }
-        } else if (type = TypeReal) {
+        } else if (type == TypeReal) {
             if (lowKeyInclusive && leafPage.Real[i] >= ix_ScanIterator.lowKeyReal) {
                 ix_ScanIterator.position = i;
                 return 0;
             }
 
-<<<<<<< HEAD
             if (!lowKeyInclusive && leafPage.Real[i] > ix_ScanIterator.lowKeyReal) {
-=======
-            if (!lowKeyInclusive & leafPage.Real[i] >= ix_ScanIterator.lowKeyReal) {
->>>>>>> 71398d34ca80326c9dfb107450e47f6b55f6bd0c
                 ix_ScanIterator.position = i;
                 return 0;
             }
@@ -463,7 +459,7 @@ RC IndexManager::scan(IXFileHandle &ixfileHandle,
                 return 0;
             }
 
-            if (lowKeyInclusive && leafPage.Varchar[i] >= ix_ScanIterator.lowKeyVar) {
+            if (!lowKeyInclusive && leafPage.Varchar[i] > ix_ScanIterator.lowKeyVar) {
                 ix_ScanIterator.position = i;
                 return 0;
             }
@@ -500,19 +496,6 @@ IX_ScanIterator::IX_ScanIterator(IXFileHandle ixFileHandle) : ixFileHandle(ixFil
     highKeyVar = "";
 }
 
-<<<<<<< HEAD
-=======
-IX_ScanIterator::IX_ScanIterator(IXFileHandle ixFileHandle) : ixFileHandle(ixFileHandle) {
-    tmp = new char[PAGE_SIZE];
-    highKellNull = true;
-    lowKeyNull = true;
-    highKeyInclu = true;
-    lowKeyInclu = true;
-    lowKeyVar = "";
-    highKeyVar = "";
-}
-
->>>>>>> 71398d34ca80326c9dfb107450e47f6b55f6bd0c
 IX_ScanIterator::IX_ScanIterator() {
     tmp = new char[PAGE_SIZE];
     highKellNull = false;
