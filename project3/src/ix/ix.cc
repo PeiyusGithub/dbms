@@ -1,3 +1,4 @@
+#include <unistd.h>
 #include "ix.h"
 #include "../rbf/rbfm.h"
 
@@ -66,22 +67,22 @@ RC IndexManager::closeFile(IXFileHandle &ixfileHandle) {
 RC IndexManager::insertEntry(IXFileHandle &ixfileHandle, const Attribute &attribute, const void *key, const RID &rid) {
     int type = attribute.type;
     ixfileHandle.fileHandle.readPage(0, tmp);
-    int now = *(int*)tmp;
+    int now = *(int*)tmp, now2;
     if (now == 0) {
         now = 1;
         changeHiddenPage(tmp, now, type);
         ixfileHandle.fileHandle.writePage(0, tmp);
         ++ixfileHandle.ixWritePageCounter;
-        //leftpage
+        //hidden page
         memset(tmp, 0, PAGE_SIZE);
-        *(tmp + 8) = -1;//no next
+        *(int*)(tmp + 8) = -1;//no next
         ixfileHandle.fileHandle.appendPage(tmp);
         ++ixfileHandle.ixAppendPageCounter;
     }
-    int intKey = 0;
-    float realKey = 0.0;
-    int varLen = 0;
-    string varKey = "";
+    int intKey = 0, intKey2 = 0;
+    float realKey = 0.0, realKey2 = 0.0;
+    int varLen = 0, varLen2 = 0;
+    string varKey = "", varKey2 = "";
     if (type == TypeInt)    intKey = *(int*)key;
     else if (type == TypeReal)  realKey = *(float*)key;
     else {
@@ -91,13 +92,13 @@ RC IndexManager::insertEntry(IXFileHandle &ixfileHandle, const Attribute &attrib
     ixfileHandle.fileHandle.readPage(now, tmp);
     ++ixfileHandle.ixReadPageCounter;
     vector<int> rootIndexPage, rootPos;
-    IndexPage indexPage;
-    LeafPage leafPage;
+    IndexPage indexPage, indexPage2;
+    LeafPage leafPage, leafPage2;
     bool isLeaf = ((*(int*)tmp) == 0);
     //TODO binary search
     while (!isLeaf) {
         indexPage.encode(tmp, type);
-        int p = 0;
+        int p = -1;
         while (p + 1 < indexPage.n) {
             if (type == TypeInt) {
                 if (intKey >= indexPage.Int[p + 1]) ++p;
@@ -143,25 +144,216 @@ RC IndexManager::insertEntry(IXFileHandle &ixfileHandle, const Attribute &attrib
     leafPage.Rid.insert(leafPage.Rid.begin() + p + 1, rid);
     ++leafPage.n;
     leafPage.update();
+    vector<int> tmpInt;
+    vector<float> tmpReal;
+    vector<string> tmpVar;
+    vector<RID> tmpRid;
+    if (leafPage.len > PAGE_SIZE) { //need new page
+        int n1 = leafPage.n >> 1;
+        for (int i = 0; i < n1; ++i) {
+            if (type == TypeInt)    tmpInt.pb(leafPage.Int[i]);
+            else if (type == TypeReal)  tmpReal.pb(leafPage.Real[i]);
+            else tmpVar.pb(leafPage.Varchar[i]);
+            tmpRid.pb(leafPage.Rid[i]);
+        }
+        leafPage2.len = 12, leafPage2.nxt = 0;
+        leafPage2.n = leafPage.n - n1;
+        leafPage2.keyType = type;
+        for (int i = n1; i < leafPage.n; ++i) {
+            if (type == TypeInt)    leafPage2.Int.pb(leafPage.Int[i]);
+            else if (type == TypeReal)  leafPage2.Real.pb(leafPage.Real[i]);
+            else leafPage2.Varchar.pb(leafPage.Varchar[i]);
+            leafPage2.Rid.pb(leafPage.Rid[i]);
+        }
+        if (type == TypeInt)    leafPage.Int = tmpInt;
+        else if (type == TypeReal)  leafPage.Real = tmpReal;
+        else leafPage.Varchar = tmpVar;
+        leafPage2.nxt = leafPage.nxt;
+        leafPage2.decode(tmp);
+        ixfileHandle.fileHandle.appendPage(tmp);
+        ++ixfileHandle.ixAppendPageCounter;
+        leafPage.Rid = tmpRid;
+        leafPage.n = n1;
+        leafPage.nxt = now2 = ixfileHandle.fileHandle.getNumberOfPages() - 1;
+        leafPage.decode(tmp);
+        ixfileHandle.fileHandle.writePage(now, tmp);
+        ++ixfileHandle.ixWritePageCounter;
+        //index
+        if (type == TypeInt)    intKey2 = leafPage2.Int[0];
+        else if (type == TypeReal)  realKey2 = leafPage2.Real[0];
+        else varKey2 = leafPage2.Varchar[0];
+        while (1) {
+            if (rootIndexPage.empty()) {
+                ixfileHandle.fileHandle.readPage(0, tmp);
+                ++ixfileHandle.ixReadPageCounter;
+                int pre = *(int*)tmp;
+                memset(tmp, 0, PAGE_SIZE);
+                *(int*)tmp = 1;
+                indexPage.encode(tmp, type);
+                indexPage.Left = pre;
+                indexPage.n = 1;
+                if (type == TypeInt)    indexPage.Int.pb(intKey2);
+                else if (type == TypeReal)  indexPage.Real.pb(realKey2);
+                else indexPage.Varchar.pb(varKey2);
+                indexPage.Right.pb(now2);
+                indexPage.decode(tmp);
+                ixfileHandle.fileHandle.appendPage(tmp);
+                ++ixfileHandle.ixAppendPageCounter;
+                now2 = ixfileHandle.fileHandle.getNumberOfPages() - 1;
+                ixfileHandle.fileHandle.readPage(0, tmp);
+                ++ixfileHandle.ixReadPageCounter;
+                changeHiddenPage(tmp, now2, type);
+                ixfileHandle.fileHandle.writePage(0, tmp);  //root pagenum
+                ++ixfileHandle.ixWritePageCounter;
+                break;
+            }
+            now = rootIndexPage.back();
+            rootIndexPage.pop_back();
+            p = rootPos.back();
+            rootPos.pop_back();
+            ixfileHandle.fileHandle.readPage(now, tmp);
+            ++ixfileHandle.ixReadPageCounter;
+            indexPage.encode(tmp, type);
+            if (type == TypeInt)    indexPage.Int.insert(indexPage.Int.begin() + p + 1, intKey2);
+            else if (type == TypeReal)  indexPage.Real.insert(indexPage.Real.begin() + p + 1, realKey2);
+            else indexPage.Varchar.insert(indexPage.Varchar.begin() + p + 1, varKey2);
+            indexPage.Right.insert(indexPage.Right.begin() + p + 1, now2);
+            ++indexPage.n;
+            indexPage.update();
+            vector<int> tmpRight;
+            if (indexPage.len > PAGE_SIZE) {//index split
+                n1 = indexPage.n >> 1;
+                if (type == TypeInt)   intKey2 = indexPage.Int[n1];
+                else if (type == TypeReal)  realKey2 = indexPage.Real[n1];
+                else varKey2 = indexPage.Varchar[n1];
+                tmpInt.clear(), tmpReal.clear(), tmpVar.clear(), tmpRight.clear();
+                for (int i = 0; i < n1; ++i) {
+                    if (type == TypeInt) tmpInt.pb(indexPage.Int[i]);
+                    else if (type == TypeReal)  tmpReal.pb(indexPage.Real[i]);
+                    else tmpVar.pb(indexPage.Varchar[i]);
+                    tmpRight.pb(indexPage.Right[i]);
+                }
+                indexPage2.len = 12;
+                indexPage2.n = indexPage.n - n1 - 1;
+                indexPage2.keyType = type;
+                indexPage2.Left = indexPage.Right[n1];
+                for (int i = n1 + 1; i < indexPage.n; ++i) {
+                    if (type == TypeInt)    indexPage2.Int.pb(indexPage.Int[i]);
+                    else if (type == TypeReal)  indexPage2.Real.pb(indexPage.Real[i]);
+                    else indexPage2.Varchar.pb(indexPage.Varchar[i]);
+                    indexPage2.Right.pb(indexPage.Right[i]);
+                }
+                indexPage2.decode(tmp);
+                ixfileHandle.fileHandle.appendPage(tmp);
+                ++ixfileHandle.ixAppendPageCounter;
+                now2 = ixfileHandle.fileHandle.getNumberOfPages() - 1;
+                if (type == TypeInt)    indexPage.Int = tmpInt;
+                else if (type == TypeReal)  indexPage.Real = tmpReal;
+                else indexPage.Varchar = tmpVar;
+                indexPage.Right = tmpRight;
+                indexPage.n = n1;
+                indexPage.decode(tmp);
+                ixfileHandle.fileHandle.writePage(now, tmp);
+                ++ixfileHandle.ixWritePageCounter;
+            }
+            else {
+                indexPage.decode(tmp);
+                ixfileHandle.fileHandle.writePage(now, tmp);
+                ++ixfileHandle.ixWritePageCounter;
+                break;
+            }
+        }
+    }
+    else {
+        leafPage.decode(tmp);
+        ixfileHandle.fileHandle.writePage(now, tmp);
+        ++ixfileHandle.ixWritePageCounter;
+    }
     return 0;
 }
 
-RC IndexManager::deleteEntry(IXFileHandle &ixfileHandle, const Attribute &attribute, const void *key, const RID &rid)
-{
-    return -1;
+RC IndexManager::deleteEntry(IXFileHandle &ixfileHandle, const Attribute &attribute, const void *key, const RID &rid) {
+    int now = getRootPage(ixfileHandle);
+    int type = getKeyType(ixfileHandle);
+    int intKey = 0, varLen = 0;
+    float realKey = 0.0;
+    string varKey = "";
+    IndexPage indexPage;
+    LeafPage leafPage;
+    if (type == TypeInt)    intKey = *(int*)key;
+    else if (type == TypeReal)  realKey = *(float*)key;
+    else {
+        varLen = *(int*)key;
+        for (int i = 0; i < varLen; ++i)    varKey += *((char*)key + 4 + i);
+    }
+    ixfileHandle.fileHandle.readPage(now, tmp);
+    ++ixfileHandle.ixReadPageCounter;
+    bool isLeaf = (*(int*)tmp == 0);
+    while (!isLeaf) {
+        indexPage.encode(tmp, type);
+        int p = -1;
+        while (p + 1 < indexPage.n) {
+            if (type == TypeInt) {
+                if (intKey >= indexPage.Int[p + 1]) ++p;
+                else break;
+            }
+            else if (type == TypeReal) {
+                if (intKey >= indexPage.Real[p + 1])    ++p;
+                else break;
+            }
+            else  {
+                if (varKey >= indexPage.Varchar[p + 1]) ++p;
+                else break;
+            }
+        }
+        if (p == -1)    now = indexPage.Left;
+        else now = indexPage.Right[p];
+        ixfileHandle.fileHandle.readPage(now, tmp);
+        ++ixfileHandle.ixReadPageCounter;
+        isLeaf = (*(int*)tmp == 0);
+    }
+    leafPage.encode(tmp, type);
+    bool find = 0;
+    vector<int> tmpInt;
+    vector<float> tmpReal;
+    vector<string> tmpVar;
+    vector<RID> tmpRid;
+    for (int i = 0; i < leafPage.n; ++i) {
+        if (type == TypeInt) {
+            if (intKey == leafPage.Int[i] && rid.pageNum == leafPage.Rid[i].pageNum && rid.slotNum == leafPage.Rid[i].slotNum)   find = 1;
+            else tmpInt.pb(leafPage.Int[i]), tmpRid.pb(leafPage.Rid[i]);
+        }
+        else if (type == TypeReal) {
+            if (realKey == leafPage.Real[i] && rid.pageNum == leafPage.Rid[i].pageNum && rid.slotNum == leafPage.Rid[i].slotNum)    find = 1;
+            else tmpReal.pb(leafPage.Real[i]), tmpRid.pb(leafPage.Rid[i]);
+        }
+        else {
+            if (varKey == leafPage.Varchar[i] && rid.pageNum == leafPage.Rid[i].pageNum && rid.slotNum == leafPage.Rid[i].slotNum)  find = 1;
+            else tmpVar.pb(leafPage.Varchar[i]), tmpRid.pb(leafPage.Rid[i]);
+        }
+    }
+    leafPage.n = tmpRid.size();
+    if (type == TypeInt)    leafPage.Int = tmpInt;
+    else if (type == TypeReal)  leafPage.Real = tmpReal;
+    else leafPage.Varchar = tmpVar;
+    leafPage.Rid = tmpRid;
+    leafPage.decode(tmp);
+    ixfileHandle.fileHandle.writePage(now, tmp);
+    ++ixfileHandle.ixWritePageCounter;
+    if (!find)  return -1;
+    return 0;
 }
 
-
 RC IndexManager::scan(IXFileHandle &ixfileHandle,
-        const Attribute &attribute,
-        const void      *lowKey,
-        const void      *highKey,
-        bool			lowKeyInclusive,
-        bool        	highKeyInclusive,
-        IX_ScanIterator &ix_ScanIterator)
+                      const Attribute &attribute,
+                      const void      *lowKey,
+                      const void      *highKey,
+                      bool			lowKeyInclusive,
+                      bool        	highKeyInclusive,
+                      IX_ScanIterator &ix_ScanIterator)
 {
     //file should be opened
-    if (!ixfileHandle.fileHandle.open) return -1;
+    if (!ixfileHandle.fileHandle.open || access(ixfileHandle.fileName.c_str(), 0) != 0) return -1;
 
 
     int type = IndexManager :: getKeyType(ixfileHandle);
@@ -170,7 +362,7 @@ RC IndexManager::scan(IXFileHandle &ixfileHandle,
     //initialize iterator
     ix_ScanIterator.ixFileHandle = ixfileHandle;
     ix_ScanIterator.highKeyInclu = highKeyInclusive;
-    ix_ScanIterator.lowKeyInclu = lowKeyInclusive;
+
 
     if (type == TypeInt) {
         ix_ScanIterator.lowKeyInt = (lowKey) ? *(int*)lowKey : INT_MIN;
@@ -182,13 +374,15 @@ RC IndexManager::scan(IXFileHandle &ixfileHandle,
         if(lowKey) {
             int len = *(int*)lowKey;
             for (int i = 0; i < len; ++i)
-                ix_ScanIterator.lowKeyVar += (char*)(lowKey + 4 + i);
+                ix_ScanIterator.lowKeyVar += *((char*)lowKey + 4 + i);
         }
         if (highKey) {
             int len = *(int*)highKey;
             for (int i = 0; i < len; ++i) {
-                ix_ScanIterator.highKeyVar += (char*)(highKey + 4 + i);
+                ix_ScanIterator.highKeyVar += *((char*)highKey + 4 + i);
             }
+        } else {
+            ix_ScanIterator.highKellNull = true;
         }
     }
     //store the current root page into tmp
@@ -255,12 +449,11 @@ RC IndexManager::scan(IXFileHandle &ixfileHandle,
                 return 0;
             }
 
-            if (!lowKeyInclusive & leafPage.Real[i] > ix_ScanIterator.lowKeyReal) {
+            if (!lowKeyInclusive && leafPage.Real[i] > ix_ScanIterator.lowKeyReal) {
                 ix_ScanIterator.position = i;
                 return 0;
             }
         } else {
-
             if (lowKeyInclusive && leafPage.Varchar[i] >= ix_ScanIterator.lowKeyVar) {
                 ix_ScanIterator.position = i;
                 return 0;
@@ -287,7 +480,7 @@ RC IndexManager::getRootPage(IXFileHandle &ixFileHandle) {
     return *(int*)tmp;
 }
 
-void IndexManager::printBtree(IXFileHandle &ixfileHandle, const Attribute &attribute) const {
+void IndexManager::printBtree(IXFileHandle &ixfileHandle, const Attribute &attribute){
     int rootPage = getRootPage(ixfileHandle);
     ixfileHandle.fileHandle.readPage(rootPage,tmp);
     bool isLeaf = *(int*)tmp == 0;
@@ -295,14 +488,18 @@ void IndexManager::printBtree(IXFileHandle &ixfileHandle, const Attribute &attri
 
 
 }
-
-IX_ScanIterator::IX_ScanIterator()
-{
+IX_ScanIterator::IX_ScanIterator(IXFileHandle ixFileHandle) : ixFileHandle(ixFileHandle) {
     tmp = new char[PAGE_SIZE];
-    highKellNull = true;
-    lowKeyNull = true;
+    highKellNull = false;
     highKeyInclu = true;
-    lowKeyInclu = true;
+    lowKeyVar = "";
+    highKeyVar = "";
+}
+
+IX_ScanIterator::IX_ScanIterator() {
+    tmp = new char[PAGE_SIZE];
+    highKellNull = false;
+    highKeyInclu = true;
     lowKeyVar = "";
     highKeyVar = "";
 }
@@ -311,7 +508,6 @@ IX_ScanIterator::~IX_ScanIterator()
 {
     delete [] tmp;
 }
-
 RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
 {
     LeafPage leafPage;
@@ -423,6 +619,7 @@ IndexPage ::IndexPage() {
 }
 
 void IndexPage::encode(void* data, int type) {
+    Int.clear(), Real.clear(), Varchar.clear(), Right.clear();
     keyType = type;
     int offset = 4;
     n = *(int*)((char*)data + offset);
@@ -446,7 +643,7 @@ void IndexPage::encode(void* data, int type) {
             int l = *(int*)((char*)data + offset);
             offset += 4;
             string now = "";
-            for (int j = 0; j < l; ++j) now += (char*)(data + offset + j);
+            for (int j = 0; j < l; ++j) now += *((char*)data + offset + j);
             offset += l;
             Varchar.pb(now);
             Right.pb(*(int*)((char*)data + offset));
@@ -457,7 +654,7 @@ void IndexPage::encode(void* data, int type) {
 }
 
 void IndexPage::decode(void *data) {
-    *(char*)data = 1;//index
+    *(int*)data = 1;//index
     int offset = 4;
     *(int*)((char*)data + offset) = n;
     offset += 4;
@@ -471,13 +668,13 @@ void IndexPage::decode(void *data) {
             offset += 4;
         }
         else if (keyType == TypeReal) {
-            *(int*)((char*)data + offset) = Real[i];
+            *(float*)((char*)data + offset) = Real[i];
             offset += 4;
             *(int*)((char*)data + offset) = Right[i];
             offset += 4;
         }
         else {
-            int l = Varchar.size();
+            int l = Varchar[i].size();
             *(int*)((char*)data + offset) = l;
             offset += 4;
             for (int j = 0; j < l; ++j) *((char*)data + offset + j) = Varchar[i][j];
@@ -488,7 +685,22 @@ void IndexPage::decode(void *data) {
     }
 }
 
+void IndexPage:: update() {
+    len = 12;
+    for (int i = 0; i < n; ++i) {
+        len += 8;
+        if (keyType == TypeVarChar) len += Varchar[i].size();
+    }
+}
+
+LeafPage ::LeafPage() {
+    n = nxt = keyType = 0;
+    len = 12;
+    Int.clear(), Real.clear(), Varchar.clear();
+}
+
 void LeafPage::encode(void *data, int type) {
+    Int.clear(), Real.clear(), Varchar.clear(), Rid.clear();
     keyType = type;
     int offset = 4;
     n = *(int*)((char*)data + offset);
@@ -518,6 +730,7 @@ void LeafPage::encode(void *data, int type) {
             offset += 4;
             string t = "";
             for (int j = 0; j < l; ++j) t += *((char*)data + offset + j);
+            Varchar.pb(t);
             offset += l;
             now.pageNum = *(int*)((char*)data + offset);
             offset += 4;
@@ -530,7 +743,7 @@ void LeafPage::encode(void *data, int type) {
 }
 
 void LeafPage ::decode(void *data) {
-    *(char*)data = 1;//leaf
+    *(int*)data = 0;//leaf
     int offset = 4;
     *(int*)((char*)data + offset) = n;
     offset += 4;
@@ -554,13 +767,14 @@ void LeafPage ::decode(void *data) {
             offset += 4;
         }
         else {
-            *(int*)((char*)data + offset) = Varchar.size();
+            *(int*)((char*)data + offset) = Varchar[i].size();
             offset += 4;
-            for (int j = 0; j < Varchar.size(); ++j)    *((char*)data + offset + j) = Varchar[i][j];
-            offset += Varchar.size();
+            for (int j = 0; j < Varchar[i].size(); ++j)    *((char*)data + offset + j) = Varchar[i][j];
+            offset += Varchar[i].size();
             *(int*)((char*)data + offset) = Rid[i].pageNum;
             offset += 4;
             *(int*)((char*)data + offset) = Rid[i].slotNum;
+            offset += 4;
         }
     }
 }
@@ -573,16 +787,9 @@ void LeafPage::update() {
     }
 }
 
-LeafPage ::LeafPage() {
-    n = nxt = keyType = 0;
-    len = 12;
-    Int.clear(), Real.clear(), Varchar.clear();
-}
-
 RC IXFileHandle::collectCounterValues(unsigned &readPageCount, unsigned &writePageCount, unsigned &appendPageCount) {
     readPageCount = ixReadPageCounter;
     writePageCount = ixWritePageCounter;
     appendPageCount = ixAppendPageCounter;
     return 0;
 }
-
