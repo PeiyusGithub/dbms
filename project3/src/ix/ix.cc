@@ -249,23 +249,24 @@ RC IndexManager::scan(IXFileHandle &ixfileHandle,
                 ix_ScanIterator.position = i;
                 return 0;
             }
-        } else if (type = TypeReal) {
+        } else if (type == TypeReal) {
             if (lowKeyInclusive && leafPage.Real[i] >= ix_ScanIterator.lowKeyReal) {
                 ix_ScanIterator.position = i;
                 return 0;
             }
 
-            if (!lowKeyInclusive & leafPage.Real[i] >= ix_ScanIterator.lowKeyReal) {
+            if (!lowKeyInclusive & leafPage.Real[i] > ix_ScanIterator.lowKeyReal) {
                 ix_ScanIterator.position = i;
                 return 0;
             }
         } else {
+
             if (lowKeyInclusive && leafPage.Varchar[i] >= ix_ScanIterator.lowKeyVar) {
                 ix_ScanIterator.position = i;
                 return 0;
             }
 
-            if (lowKeyInclusive && leafPage.Varchar[i] >= ix_ScanIterator.lowKeyVar) {
+            if (!lowKeyInclusive && leafPage.Varchar[i] > ix_ScanIterator.lowKeyVar) {
                 ix_ScanIterator.position = i;
                 return 0;
             }
@@ -287,6 +288,12 @@ RC IndexManager::getRootPage(IXFileHandle &ixFileHandle) {
 }
 
 void IndexManager::printBtree(IXFileHandle &ixfileHandle, const Attribute &attribute) const {
+    int rootPage = getRootPage(ixfileHandle);
+    ixfileHandle.fileHandle.readPage(rootPage,tmp);
+    bool isLeaf = *(int*)tmp == 0;
+    int type = getKeyType(ixfileHandle);
+
+
 }
 
 IX_ScanIterator::IX_ScanIterator()
@@ -393,7 +400,7 @@ RC IX_ScanIterator::getNextEntry(RID &rid, void *key)
 
 RC IX_ScanIterator::close()
 {
-    return -1;
+    return 0;
 }
 
 
