@@ -20,6 +20,7 @@ public:
     vector<int> Int, Right;
     vector<float> Real;
     vector<string> Varchar;
+    vector<RID> Rid;
     IndexPage();
     void encode(void* data, int type);
     void decode(void* data);
@@ -42,6 +43,8 @@ public:
 class IndexManager {
 public:
     char* tmp;
+    int account;
+    int cmp(RID p, RID q);
     static IndexManager* instance();
     // Create an index file.
     RC createFile(const string &fileName);
@@ -75,6 +78,9 @@ public:
 
     // Print the B+ tree in pre-order (in a JSON record format)
     void printBtree(IXFileHandle &ixfileHandle, const Attribute &attribute) const;
+
+    void printLeaf (IXFileHandle &ixfileHandle, const Attribute &attribute, int limit);
+    void printIndex (IXFileHandle &ixfileHandle, const Attribute &attribute);
 
 protected:
     IndexManager();
