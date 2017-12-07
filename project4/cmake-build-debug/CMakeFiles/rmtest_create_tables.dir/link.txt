@@ -1,0 +1,1 @@
+/usr/bin/c++  -g   CMakeFiles/rmtest_create_tables.dir/src/rm/rmtest_create_tables.cc.o  -o rmtest_create_tables libLIBRBF.a 

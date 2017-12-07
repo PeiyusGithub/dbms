@@ -1,0 +1,1 @@
+/usr/bin/c++  -g   CMakeFiles/rmtest_delete_tables.dir/src/rm/rmtest_delete_tables.cc.o  -o rmtest_delete_tables libLIBRBF.a 

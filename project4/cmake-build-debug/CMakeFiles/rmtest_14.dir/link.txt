@@ -1,0 +1,1 @@
+/usr/bin/c++  -g   CMakeFiles/rmtest_14.dir/src/rm/rmtest_14.cc.o  -o rmtest_14 libLIBRBF.a 

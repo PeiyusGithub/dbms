@@ -1,0 +1,1 @@
+/usr/bin/c++  -g   CMakeFiles/rbftest_delete.dir/src/rbf/rbftest_delete.cc.o  -o rbftest_delete libLIBRBF.a 
