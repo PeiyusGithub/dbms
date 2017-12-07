@@ -267,7 +267,10 @@ RC RelationManager::createTable(const string &tableName, const vector<Attribute>
 	RecordBasedFileManager* rbfm = RecordBasedFileManager::instance();
     RecordBasedFileManager* index_rbfm = RecordBasedFileManager::instance();
     string index_name = tableName + "indexFiles";
-	return min(rbfm->createFile(tableName), index_rbfm->createFile(index_name));
+	int a = rbfm->createFile(tableName);
+	int b = index_rbfm->createFile(index_name);
+
+	return min(a, b);
 }
 
 RC RelationManager::deleteTable(const string &tableName)
@@ -409,7 +412,7 @@ RC RelationManager::decodeIndex(const void* data, vector<Attribute> attrs, const
                         return 0;
 
                     case TypeVarChar:
-                        int len = *(int*)(data + offset);
+                        int len = *(int*)((char*)data + offset);
                         memcpy(key, (char*)data + offset, (sizeof(int) + len));
                         return 0;
                 }
@@ -424,7 +427,7 @@ RC RelationManager::decodeIndex(const void* data, vector<Attribute> attrs, const
                         break;
 
                     case TypeVarChar:
-                        int len = *(int*)(data + offset);
+                        int len = *(int*)((char*)data + offset);
                         offset += len + sizeof(int);
                         break;
                 }
@@ -488,10 +491,10 @@ RC RelationManager::insertTuple(const string &tableName, const void *data, RID &
         indexManager->openFile(name, ixFileHandle);
         indexManager->insertEntry(ixFileHandle, att, tmp, rid);
         indexManager->closeFile(ixFileHandle);
-        delete tmp;
+        free(tmp);
     }
 
-    delete key;
+    free(key);
 	return 0;
 }
 
@@ -539,9 +542,9 @@ RC RelationManager::deleteTuple(const string &tableName, const RID &rid)
         indexManager->openFile(name, ixFileHandle);
         indexManager->deleteEntry(ixFileHandle,att,tmp,rid);
         indexManager->closeFile(ixFileHandle);
-        delete tmp;
+        free(tmp);
     }
-    delete key;
+    free(key);
     return 0;
 }
 RC RelationManager::updateTuple(const string &tableName, const void *data, const RID &rid)
@@ -595,14 +598,14 @@ RC RelationManager::updateTuple(const string &tableName, const void *data, const
                 indexManager->insertEntry(ixFileHandle,att,tmp2,rid);
 
                 indexManager->closeFile(ixFileHandle);
-                delete tmp;
-                delete tmp2;
+                free(tmp);
+				free(tmp2);
                 break;
             }
         }
     }
-    delete key;
-    delete key2;
+	free(key);
+	free(key2);
     return 0;
 
 }
@@ -673,57 +676,7 @@ RC RelationManager::scan(const string &tableName,
 // Extra credit work
 RC RelationManager::dropAttribute(const string &tableName, const string &attributeName)
 {
-	RecordBasedFileManager* rbfm = RecordBasedFileManager::instance();
-	FileHandle fileHandle;
-	rbfm->openFile("Tables",fileHandle);
 
-	vector<Attribute> attrs_t;
-	this->getAttributes("Tables",attrs_t);
-
-	vector<string> targetAtt;
-	targetAtt.push_back("table-id");
-
-	int len = tableName.size();
-	char* val = (char*)malloc(len+sizeof(int));
-	memcpy(val, &len, sizeof(int));
-	memcpy((char*)val+sizeof(int),tableName.c_str(),len);
-
-	RBFM_ScanIterator rbfm_ScanIteratorc;
-	rbfm->scan(fileHandle,attrs_t,"table-name",EQ_OP,val,targetAtt,rbfm_ScanIteratorc);
-
-	int nullAttributesIndicatorActualSize = ceil((double) targetAtt.size() / CHAR_BIT);
-	RID rid;
-	void* num = malloc(sizeof(int) + nullAttributesIndicatorActualSize);
-	rbfm_ScanIteratorc.getNextRecord(rid,num);
-
-	int number;
-	memcpy(&number, num+nullAttributesIndicatorActualSize,sizeof(int));
-
-	RecordBasedFileManager* rbfmc = RecordBasedFileManager::instance();
-	FileHandle fileHandlec;
-	rbfmc->openFile("Columns",fileHandle);
-
-	vector<Attribute> attrs_c;
-	this->getAttributes("Columns",attrs_c);
-
-	vector<string> targetAttc;
-	targetAttc.push_back("column-name");
-
-//	int len = tableName.size();
-//	char* val = (char*)malloc(len+sizeof(int));
-//	memcpy(val, &len, sizeof(int));
-//	memcpy((char*)val+sizeof(int),tableName.c_str(),len);
-//
-//	RBFM_ScanIterator rbfm_ScanIteratorcc;
-//	rbfm->scan(fileHandle,attrs_t,"table-name",EQ_OP,val,targetAtt,rbfm_ScanIteratorcc);
-//
-//	int nullAttributesIndicatorActualSize = ceil((double) targetAtt.size() / CHAR_BIT);
-//	RID rid;
-//	void* num = malloc(sizeof(int) + nullAttributesIndicatorActualSize);
-//	rbfm_ScanIteratorcc.getNextRecord(rid,num);
-//
-//	int number;
-//	memcpy(&number, num+nullAttributesIndicatorActualSize,sizeof(int));
 
 
 	return -1;
@@ -757,10 +710,10 @@ RC RelationManager::loadIndex(vector<string> indexFileNames, const string index_
     }
 
     if (fileHandle.writePage(0,data) != 0){
-        delete data;
+         free(data);
         return -1;
     }
-    delete data;
+	free(data);
     return index_rbfm->closeFile(fileHandle);
 }
 
@@ -782,7 +735,7 @@ RC RelationManager::getIndex(vector<string> indexFileNames, const string index_n
         offset += l;
         indexFileNames.push_back(tmp);
     }
-    delete data;
+	free(data);
     return 0;
 }
 
@@ -820,16 +773,17 @@ RC RelationManager::createIndex(const string &tableName, const string &attribute
         indexFileNames.push_back(attributeName);
         loadIndex(indexFileNames,index_name);
     }
-    delete data;
+	free(data);
     //now we create the index file
     string index_file = tableName + attributeName;
     IndexManager* tmp = IndexManager::instance();
     IXFileHandle ixFileHandle;
-    if (tmp->openFile(index_file,ixFileHandle) == 0)
-        return -1;
-    else
+    if (tmp->openFile(index_file,ixFileHandle) == 0){
+		tmp->closeFile(ixFileHandle);
+		return -1;
+	} else
         tmp->createFile(index_file);
-    tmp->closeFile(ixFileHandle);
+
 
     return index_rbfm->closeFile(indexFileHandle);
 }
