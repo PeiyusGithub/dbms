@@ -1,4 +1,4 @@
-# Database management system
+# Database Management System
 This project implemented the following parts in database management system : **Record-Based File Manager, Relation Manager, Index Manager, and Query Engine**. Which are basic and important in the DBMS Architecture.
 ![DBMS Architecture](https://i.loli.net/2018/01/06/5a5008c380bbb.png)
 
@@ -9,7 +9,7 @@ Based on the PF manager, I implemented the record-based file manager.
 ## Relation Manager
 The Relation Manager class is responsible for managing the database tables. It handles the creation and deletion of tables. It also handles the basic operations performed on top of a table (e.g., insert and delete tuples).
 
-## index Manager
+## Index Manager
 The IX component provides classes and methods for managing persistent indexes over unordered data records stored in files. Each data file may have any number of (single-attribute) indexes associated with it. The indexes ultimately will be used to speed up processing of relational selections, joins, condition-based update, and delete operations. In this part I implement a basic B+ tree that has support for range predicates.
 
 ## Query Engine
